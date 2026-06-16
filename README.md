@@ -34,13 +34,6 @@ Les titres : **Novice → Apprenti → Développeur → Vétéran → Architecte
 2. Attendre que Maven télécharge Gson (automatique)
 3. Lancer `com.taskquest.Main`
 
-### Avec les scripts (si pas Maven d'installé)
-
-```bat
-compile.bat
-run.bat
-```
-
 > Le fichier `lib/gson-2.10.1.jar` est déjà inclus dans le projet.
 
 ### Avec Maven (si installé)
