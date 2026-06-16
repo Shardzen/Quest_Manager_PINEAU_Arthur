@@ -1,0 +1,26 @@
+# Build
+target/
+out/
+*.class
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.classpath
+.project
+.settings/
+*.eclipse
+nbproject/
+
+# Données utilisateur (ne pas commit les données personnelles)
+.taskquest/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
