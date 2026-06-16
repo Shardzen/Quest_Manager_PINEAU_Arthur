@@ -13,15 +13,12 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 /**
- * Contrôleur principal gérant les opérations CRUD sur les quêtes.
- * <p>
- * Coordonne la couche modèle, le {@link QuestRepository} et le
- * {@link PlayerController} pour l'attribution d'XP à la complétion.
- * La couche vue ne doit jamais accéder au repository directement.
- * </p>
+ * Contrôleur des quêtes : CRUD + attribution XP au joueur.
+ * La vue passe toujours par ce contrôleur, jamais par le repository directement.
  */
 public class QuestController {
 
+    // stockage dans le dossier perso de l'utilisateur
     private static final Path DATA_DIR = Paths.get(
         System.getProperty("user.home"), ".taskquest", "data"
     );
@@ -31,70 +28,68 @@ public class QuestController {
     private List<Quest> quests;
 
     /**
-     * @param playerController Le contrôleur joueur utilisé pour l'attribution de l'XP
+     * @param playerController le contrôleur joueur, utilisé pour addXP() quand une quête est terminée
      */
     public QuestController(PlayerController playerController) {
-        this.repository = new QuestRepository(DATA_DIR);
+        this.repository       = new QuestRepository(DATA_DIR);
         this.playerController = playerController;
-        this.quests = new ArrayList<>();
+        this.quests           = new ArrayList<>();
     }
 
     /**
-     * Charge toutes les quêtes depuis la persistance.
+     * Charge les quêtes depuis le fichier JSON.
      *
-     * @throws DataCorruptedException Si les données sont corrompues
+     * @throws DataCorruptedException si le fichier est illisible ou corrompu
      */
     public void loadAll() throws DataCorruptedException {
         this.quests = repository.loadAll();
     }
 
     /**
-     * Sauvegarde toutes les quêtes actuelles.
+     * Sauvegarde toutes les quêtes en JSON.
      *
-     * @throws DataCorruptedException En cas d'erreur d'écriture
+     * @throws DataCorruptedException si l'écriture échoue
      */
     public void saveAll() throws DataCorruptedException {
         repository.saveAll(quests);
     }
 
     /**
-     * Crée et persiste une nouvelle quête après validation complète des données.
+     * Crée une nouvelle quête après validation des données.
      *
-     * @param title       Titre (non vide, max {@link Quest#MAX_TITLE_LENGTH} caractères)
-     * @param description Description (max {@link Quest#MAX_DESCRIPTION_LENGTH} caractères)
-     * @param xpReward    Récompense XP (1 à {@link Reward#MAX_XP_REWARD})
+     * @param title       titre non vide, max {@link Quest#MAX_TITLE_LENGTH} chars
+     * @param description description optionnelle, max {@link Quest#MAX_DESCRIPTION_LENGTH} chars
+     * @param xpReward    entre 1 et {@link Reward#MAX_XP_REWARD}
      * @param type        "DAILY" ou "ONETIME"
-     * @throws InvalidQuestException  Si l'une des données est invalide
-     * @throws DataCorruptedException En cas d'erreur de sauvegarde
+     * @throws InvalidQuestException  si une valeur est invalide
+     * @throws DataCorruptedException si la sauvegarde échoue
      */
     public void createQuest(String title, String description, int xpReward, String type)
             throws InvalidQuestException, DataCorruptedException {
-        validateInput(title, description, xpReward);
+        valider(title, description, xpReward);
 
-        Quest quest = switch (type) {
+        Quest q = switch (type) {
             case "DAILY"   -> new DailyQuest(title.trim(), description == null ? "" : description.trim(), xpReward);
             case "ONETIME" -> new OneTimeQuest(title.trim(), description == null ? "" : description.trim(), xpReward);
-            default        -> throw new InvalidQuestException("Type de quête invalide : " + type);
+            default        -> throw new InvalidQuestException("Type inconnu : " + type);
         };
 
-        quests.add(quest);
+        quests.add(q);
         repository.saveAll(quests);
     }
 
     /**
-     * Retourne une copie de la liste de toutes les quêtes.
-     *
-     * @return La liste complète des quêtes
+     * @return copie de la liste complète des quêtes
      */
     public List<Quest> getAllQuests() {
         return new ArrayList<>(quests);
     }
 
     /**
-     * Retourne les quêtes filtrées par statut.
+     * Filtre les quêtes par statut.
      *
-     * @param status Le statut souhaité, ou null pour retourner toutes les quêtes
-     * @return La liste filtrée
+     * @param status le statut voulu (null = toutes)
+     * @return la liste filtrée
      */
     public List<Quest> getQuestsByStatus(QuestStatus status) {
         if (status == null) return getAllQuests();
@@ -104,90 +99,72 @@ public class QuestController {
     }
 
     /**
-     * Marque une quête comme terminée et attribue l'XP au joueur.
+     * Marque une quête comme terminée et donne l'XP au joueur.
      *
-     * @param questId L'identifiant de la quête à terminer
-     * @return true si le joueur a monté de niveau suite à cette action
-     * @throws InvalidQuestException  Si la quête est introuvable ou déjà terminée
-     * @throws PlayerNotFoundException Si le joueur n'est pas chargé
-     * @throws DataCorruptedException  En cas d'erreur de sauvegarde
+     * @param questId l'id de la quête
+     * @return true si le joueur a monté de niveau
+     * @throws InvalidQuestException   quête introuvable ou déjà terminée
+     * @throws PlayerNotFoundException joueur non initialisé
+     * @throws DataCorruptedException  erreur de sauvegarde
      */
     public boolean completeQuest(String questId)
             throws InvalidQuestException, PlayerNotFoundException, DataCorruptedException {
-        Quest quest = findById(questId);
-        if (quest.getStatus() == QuestStatus.DONE) {
+        Quest q = trouver(questId);
+        if (q.getStatus() == QuestStatus.DONE)
             throw new InvalidQuestException("Cette quête est déjà terminée.");
-        }
-        quest.setStatus(QuestStatus.DONE);
-        boolean leveledUp = playerController.addXP(quest.getXpReward());
+
+        q.setStatus(QuestStatus.DONE);
+        boolean levelUp = playerController.addXP(q.getXpReward());
         repository.saveAll(quests);
-        return leveledUp;
+        return levelUp;
     }
 
     /**
-     * Passe une quête au statut {@link QuestStatus#IN_PROGRESS}.
+     * Passe une quête en IN_PROGRESS.
      *
-     * @param questId L'identifiant de la quête
-     * @throws InvalidQuestException  Si la quête est introuvable ou déjà terminée
-     * @throws DataCorruptedException En cas d'erreur de sauvegarde
+     * @param questId l'id de la quête
+     * @throws InvalidQuestException  quête introuvable ou déjà terminée
+     * @throws DataCorruptedException erreur de sauvegarde
      */
     public void startQuest(String questId) throws InvalidQuestException, DataCorruptedException {
-        Quest quest = findById(questId);
-        if (quest.getStatus() == QuestStatus.DONE) {
-            throw new InvalidQuestException("Cette quête est déjà terminée et ne peut pas être redémarrée.");
-        }
-        quest.setStatus(QuestStatus.IN_PROGRESS);
+        Quest q = trouver(questId);
+        if (q.getStatus() == QuestStatus.DONE)
+            throw new InvalidQuestException("La quête est déjà terminée.");
+        q.setStatus(QuestStatus.IN_PROGRESS);
         repository.saveAll(quests);
     }
 
     /**
-     * Supprime définitivement une quête de la liste.
+     * Supprime définitivement une quête.
      *
-     * @param questId L'identifiant de la quête à supprimer
-     * @throws InvalidQuestException  Si la quête est introuvable
-     * @throws DataCorruptedException En cas d'erreur de sauvegarde
+     * @param questId l'id de la quête à supprimer
+     * @throws InvalidQuestException  quête introuvable
+     * @throws DataCorruptedException erreur de sauvegarde
      */
     public void deleteQuest(String questId) throws InvalidQuestException, DataCorruptedException {
-        Quest quest = findById(questId);
-        quests.remove(quest);
+        quests.remove(trouver(questId));
         repository.saveAll(quests);
     }
 
-    /**
-     * Recherche une quête par son identifiant.
-     *
-     * @param questId L'identifiant à rechercher
-     * @return La quête correspondante
-     * @throws InvalidQuestException Si aucune quête ne correspond
-     */
-    private Quest findById(String questId) throws InvalidQuestException {
+    // recherche par id, lève une exception si introuvable
+    private Quest trouver(String id) throws InvalidQuestException {
         return quests.stream()
-                .filter(q -> q.getId().equals(questId))
+                .filter(q -> q.getId().equals(id))
                 .findFirst()
-                .orElseThrow(() -> new InvalidQuestException("Quête introuvable : " + questId));
+                .orElseThrow(() -> new InvalidQuestException("Quête introuvable : " + id));
     }
 
-    /**
-     * Valide les champs d'une quête avant création.
-     *
-     * @throws InvalidQuestException Si une règle de validation est violée
-     */
-    private void validateInput(String title, String description, int xpReward)
-            throws InvalidQuestException {
-        if (title == null || title.isBlank()) {
+    // validation des champs avant création
+    private void valider(String title, String description, int xpReward) throws InvalidQuestException {
+        if (title == null || title.isBlank())
             throw new InvalidQuestException("Le titre ne peut pas être vide.");
-        }
-        if (title.length() > Quest.MAX_TITLE_LENGTH) {
-            throw new InvalidQuestException("Le titre ne peut pas dépasser " + Quest.MAX_TITLE_LENGTH + " caractères.");
-        }
-        if (description != null && description.length() > Quest.MAX_DESCRIPTION_LENGTH) {
-            throw new InvalidQuestException("La description ne peut pas dépasser " + Quest.MAX_DESCRIPTION_LENGTH + " caractères.");
-        }
-        if (xpReward <= 0) {
-            throw new InvalidQuestException("La récompense XP doit être strictement positive.");
-        }
-        if (xpReward > Reward.MAX_XP_REWARD) {
+        if (title.length() > Quest.MAX_TITLE_LENGTH)
+            throw new InvalidQuestException("Titre trop long (max " + Quest.MAX_TITLE_LENGTH + " caractères).");
+        if (description != null && description.length() > Quest.MAX_DESCRIPTION_LENGTH)
+            throw new InvalidQuestException("Description trop longue (max " + Quest.MAX_DESCRIPTION_LENGTH + " caractères).");
+        if (xpReward <= 0)
+            throw new InvalidQuestException("La récompense XP doit être positive.");
+        if (xpReward > Reward.MAX_XP_REWARD)
             throw new InvalidQuestException("La récompense XP ne peut pas dépasser " + Reward.MAX_XP_REWARD + ".");
-        }
     }
 }
