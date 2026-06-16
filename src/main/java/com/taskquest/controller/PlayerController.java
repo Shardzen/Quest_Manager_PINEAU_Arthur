@@ -10,12 +10,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 
 /**
- * Contrôleur gérant le cycle de vie du joueur : initialisation, chargement,
- * sauvegarde et attribution d'XP.
- * <p>
- * Ce contrôleur est le seul point d'accès au {@link Player} depuis la couche vue.
- * Toute lecture ou écriture de données passe par le {@link PlayerRepository}.
- * </p>
+ * Gère le joueur : chargement, initialisation, sauvegarde et attribution d'XP.
  */
 public class PlayerController {
 
@@ -23,85 +18,77 @@ public class PlayerController {
         System.getProperty("user.home"), ".taskquest", "data"
     );
 
-    private static final int MAX_NAME_LENGTH = 50;
+    private static final int MAX_NOM_LENGTH = 50;
 
     private final PlayerRepository repository;
     private Player player;
 
-    /** Crée le contrôleur et initialise le repository. */
     public PlayerController() {
         this.repository = new PlayerRepository(DATA_DIR);
     }
 
     /**
-     * Charge le profil joueur depuis la persistance.
+     * Charge le joueur depuis le fichier JSON.
      * Ne fait rien si le fichier n'existe pas (première utilisation).
      *
-     * @throws DataCorruptedException Si les données sont corrompues
+     * @throws DataCorruptedException si le fichier est corrompu
      */
     public void loadPlayer() throws DataCorruptedException {
         this.player = repository.load();
     }
 
     /**
-     * Crée un nouveau joueur avec le nom fourni.
+     * Crée un nouveau joueur niveau 1 avec le nom donné.
      *
-     * @param name Le nom de l'aventurier (non vide, max {@value #MAX_NAME_LENGTH} caractères)
-     * @throws InvalidQuestException Si le nom est invalide
+     * @param nom le nom de l'aventurier
+     * @throws InvalidQuestException si le nom est vide ou trop long
      */
-    public void initializePlayer(String name) throws InvalidQuestException {
-        if (name == null || name.isBlank()) {
-            throw new InvalidQuestException("Le nom du joueur ne peut pas être vide.");
-        }
-        if (name.length() > MAX_NAME_LENGTH) {
-            throw new InvalidQuestException("Le nom ne peut pas dépasser " + MAX_NAME_LENGTH + " caractères.");
-        }
-        this.player = new Player(name.trim());
+    public void initializePlayer(String nom) throws InvalidQuestException {
+        if (nom == null || nom.isBlank())
+            throw new InvalidQuestException("Le nom ne peut pas être vide.");
+        if (nom.length() > MAX_NOM_LENGTH)
+            throw new InvalidQuestException("Le nom ne peut pas dépasser " + MAX_NOM_LENGTH + " caractères.");
+        this.player = new Player(nom.trim());
     }
 
     /**
-     * Retourne le joueur actif.
-     *
-     * @return Le joueur actif
-     * @throws PlayerNotFoundException Si aucun joueur n'a été créé ou chargé
+     * @return le joueur actif
+     * @throws PlayerNotFoundException si aucun joueur n'est chargé
      */
     public Player getPlayer() throws PlayerNotFoundException {
-        if (player == null) {
-            throw new PlayerNotFoundException("Aucun joueur chargé. Veuillez créer un personnage.");
-        }
+        if (player == null)
+            throw new PlayerNotFoundException("Aucun joueur chargé.");
         return player;
     }
 
     /**
-     * Indique si un joueur est actuellement chargé en mémoire.
-     *
-     * @return true si un joueur existe, false sinon
+     * @return true si un joueur est déjà chargé en mémoire
      */
     public boolean hasPlayer() {
         return player != null;
     }
 
     /**
-     * Ajoute de l'XP au joueur et persiste immédiatement le résultat.
+     * Ajoute de l'XP au joueur et sauvegarde immédiatement.
      *
-     * @param xp L'XP à ajouter (doit être strictement positive)
+     * @param xp l'XP à ajouter
      * @return true si le joueur a monté de niveau
-     * @throws PlayerNotFoundException Si le joueur n'est pas chargé
-     * @throws DataCorruptedException  En cas d'erreur de sauvegarde
+     * @throws PlayerNotFoundException si le joueur n'est pas chargé
+     * @throws DataCorruptedException  si la sauvegarde échoue
      */
     public boolean addXP(int xp) throws PlayerNotFoundException, DataCorruptedException {
         Player p = getPlayer();
-        int levelBefore = p.getLevel();
+        int niveauAvant = p.getLevel();
         p.addXP(xp);
         repository.save(p);
-        return p.getLevel() > levelBefore;
+        return p.getLevel() > niveauAvant;
     }
 
     /**
      * Sauvegarde le profil du joueur.
      *
-     * @throws DataCorruptedException  En cas d'erreur d'écriture
-     * @throws PlayerNotFoundException Si le joueur n'est pas chargé
+     * @throws DataCorruptedException  si l'écriture échoue
+     * @throws PlayerNotFoundException si le joueur n'est pas chargé
      */
     public void savePlayer() throws DataCorruptedException, PlayerNotFoundException {
         repository.save(getPlayer());
